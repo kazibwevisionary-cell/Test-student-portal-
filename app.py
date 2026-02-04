@@ -3,108 +3,143 @@ import pandas as pd
 from supabase import create_client
 
 # 1. DATABASE CONNECTION
+# Connecting to your specific Supabase project
 PROJECT_ID = "uxtmgdenwfyuwhezcleh"
 SUPABASE_URL = f"https://{PROJECT_ID}.supabase.co"
 SUPABASE_KEY = "sb_publishable_1BIwMEH8FVDv7fFafz31uA_9FqAJr0-"
 
 try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception:
-    st.error("Database Connection Failed.")
+except Exception as e:
+    st.error(f"Database Connection Failed: {e}")
     st.stop()
 
-# 2. UI CONFIG
-st.set_page_config(page_title="KIU Q10 Portal", layout="wide")
+# 2. UI CONFIGURATION
+st.set_page_config(page_title="KIU Study Portal", layout="wide", page_icon="🎓")
 
+# Custom CSS for a professional look
 st.markdown("""
 <style>
-.footer { position: fixed; left: 0; bottom: 0; width: 100%; text-align: center; padding: 10px; background: white; border-top: 1px solid #eee; z-index: 999; }
-.video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; background: #000; border-radius: 8px; margin-bottom: 10px; }
-.video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+    .stApp { background-color: #f8fafc; }
+    .footer { position: fixed; left: 0; bottom: 0; width: 100%; text-align: center; padding: 10px; background: white; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
+    .video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+    .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
 </style>
 """, unsafe_allow_html=True)
 
-# 3. LOGIN PAGE
+# 3. AUTHENTICATION STATE
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
+# 4. LOGIN PAGE
 if not st.session_state.logged_in:
-    st.markdown("<h1 style='text-align: center;'> KIU Q10 Portal</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1,1.5,1])
+    st.markdown("<h1 style='text-align: center; color: #1e40af; margin-top: 50px;'>KIU Q10 STUDY PORTAL</h1>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
-            st.subheader("Login Access")
-            st.text_input("Username")
-            st.text_input("Password", type="password")
-            if st.button("Login", use_container_width=True) or st.button(" Skip & Browse", use_container_width=True):
+            st.subheader("Sign In")
+            u = st.text_input("Registration Number / Email")
+            p = st.text_input("Password", type="password")
+            
+            if st.button("Access Portal", use_container_width=True, type="primary"):
+                st.session_state.logged_in = True
+                st.rerun()
+            
+            st.divider()
+            if st.button("Continue as Guest", use_container_width=True):
                 st.session_state.logged_in = True
                 st.rerun()
     st.stop()
 
-# 4. NAVIGATION
-role = st.sidebar.radio("Navigation", ["Student Portal", "Admin Dashboard", "President Board"])
+# 5. NAVIGATION
+st.sidebar.image("https://www.kiu.ac.ug/assets/images/logo.png", width=150) # Using KIU logo if available
+menu = st.sidebar.radio("Main Menu", ["Student Portal", "Admin Dashboard", "Announcements"])
 
-if role == "Admin Dashboard":
-    st.header(" Management Console")
-    t1, t2, t3 = st.tabs([" Add Entry", " Bulk Upload", "Delete Content"])
+# --- STUDENT PORTAL ---
+if menu == "Student Portal":
+    st.title("📖 My Learning Resources")
+    search_query = st.text_input("🔍 Search by Course Name (e.g. BIT, Law, BBA)", placeholder="Type here to filter...").strip()
+    
+    if search_query:
+        # Fetching data from your Supabase 'materials' table
+        try:
+            response = supabase.table("materials").select("*").ilike("course_program", f"%{search_query}%").order("week").execute()
+            
+            if response.data:
+                for item in response.data:
+                    with st.container(border=True):
+                        col_text, col_vid = st.columns([1, 2])
+                        
+                        with col_text:
+                            st.subheader(f"Week {item['week']}")
+                            st.write(f"**Topic:** {item['course_name']}")
+                            st.link_button("📂 View Course Notes", item['notes_url'])
+                        
+                        with col_vid:
+                            url = str(item.get('video_url', ""))
+                            if "youtube.com" in url or "youtu.be" in url:
+                                v_id = url.split("v=")[1].split("&")[0] if "v=" in url else url.split("/")[-1]
+                                st.markdown(f'<div class="video-container"><iframe src="https://www.youtube.com/embed/{v_id}"></iframe></div>', unsafe_allow_html=True)
+                            else:
+                                st.info("No video preview available for this entry.")
+            else:
+                st.warning("No records found for that course. Please check your spelling.")
+        except Exception as e:
+            st.error(f"Error fetching data: {e}")
+
+# --- ADMIN DASHBOARD ---
+elif menu == "Admin Dashboard":
+    st.title("🛠️ Admin Management")
+    t1, t2, t3 = st.tabs(["Add Single Entry", "Bulk Excel Upload", "Manage Database"])
     
     with t1:
-        with st.form("manual"):
-            p = st.text_input("Course Name")
-            t = st.text_input("Module Topic")
-            w = st.number_input("Week", 1, 15)
-            y = st.text_input("YouTube/Slide Link")
-            n = st.text_input("Notes Link")
-            if st.form_submit_button("Save"):
-                supabase.table("materials").insert({"course_program": p, "course_name": t, "week": w, "video_url": y, "notes_url": n}).execute()
-                st.success("Saved!")
+        with st.form("manual_entry"):
+            prog = st.text_input("Course Program (e.g. BIT 2.1)")
+            name = st.text_input("Topic Covered")
+            wk = st.number_input("Week Number", 1, 15)
+            vid = st.text_input("YouTube Link")
+            note = st.text_input("Google Docs/Notes Link")
+            if st.form_submit_button("Save Entry"):
+                supabase.table("materials").insert({"course_program": prog, "course_name": name, "week": wk, "video_url": vid, "notes_url": note}).execute()
+                st.success("Entry Saved Successfully!")
 
     with t2:
-        target = st.text_input("Target Course Name")
-        f = st.file_uploader("Upload CSV/Excel", type=["xlsx", "csv"])
-        if f and target and st.button("Start Upload"):
-            df = pd.read_excel(f) if "xlsx" in f.name else pd.read_csv(f)
-            for index, row in df.iterrows():
+        course_label = st.text_input("Course Name for Bulk Upload")
+        file = st.file_uploader("Upload Excel Template", type=["xlsx", "csv"])
+        if file and course_label and st.button("Start Bulk Upload"):
+            df = pd.read_excel(file) if "xlsx" in file.name else pd.read_csv(file)
+            for _, row in df.iterrows():
                 supabase.table("materials").insert({
-                    "course_program": target,
-                    "course_name": str(row.get('Topic Covered', "")),
+                    "course_program": course_label,
+                    "course_name": str(row.get('Topic Covered', '')),
                     "week": int(row.get('Week', 1)),
-                    "video_url": str(row.get('Embeddable YouTube Video Link', "")),
-                    "notes_url": str(row.get('link to Google docs Document', ""))
+                    "video_url": str(row.get('Embeddable YouTube Video Link', '')),
+                    "notes_url": str(row.get('link to Google docs Document', ''))
                 }).execute()
-            st.success("Done!")
+            st.success("Database Updated via Excel!")
 
     with t3:
-        # FIXED SECTION: This was likely where your SyntaxError occurred
-        data = supabase.table("materials").select("*").execute()
-        if data.data:
-            for item in data.data:
-                c1, c2 = st.columns([4, 1])
-                c1.write(f"**{item['course_program']}** | Wk {item['week']}: {item['course_name']}")
-                if c2.button("Delete", key=f"del_{item['id']}"):
-                    supabase.table("materials").delete().eq("id", item['id']).execute()
-                    st.rerun()
+        all_data = supabase.table("materials").select("*").execute()
+        st.write(f"Total Entries: {len(all_data.data)}")
+        for entry in all_data.data:
+            c1, c2 = st.columns([4, 1])
+            c1.write(f"**{entry['course_program']}** | Wk {entry['week']}: {entry['course_name']}")
+            if c2.button("🗑️ Delete", key=f"del_{entry['id']}"):
+                supabase.table("materials").delete().eq("id", entry['id']).execute()
+                st.rerun()
 
-elif role == "President Board":
-    with st.form("notice"):
-        tt = st.text_input("Title")
-        mm = st.text_area("Message")
-        if st.form_submit_button("Publish"):
-            supabase.table("notices").insert({"title": tt, "content": mm}).execute()
-            st.success("Published!")
+# --- ANNOUNCEMENTS ---
+elif menu == "Announcements":
+    st.title("📢 President's Notice Board")
+    notices = supabase.table("notices").select("*").order("created_at", desc=True).execute()
+    
+    if notices.data:
+        for n in notices.data:
+            with st.chat_message("user"):
+                st.write(f"**{n['title']}**")
+                st.write(n['content'])
+    else:
+        st.info("No recent announcements.")
 
-elif role == "Student Portal":
-    search = st.text_input("Search Course").strip()
-    if search:
-        res = supabase.table("materials").select("*").ilike("course_program", f"%{search}%").order("week").execute()
-        for item in res.data:
-            with st.expander(f"Week {item['week']} - {item['course_name']}"):
-                url = str(item.get('video_url', ""))
-                if "youtube.com" in url or "youtu.be" in url:
-                    v_id = url.split("v=")[1].split("&")[0] if "v=" in url else url.split("/")[-1]
-                    st.markdown(f'<div class="video-container"><iframe src="https://www.youtube.com/embed/{v_id}"></iframe></div>', unsafe_allow_html=True)
-                elif "docs.google.com" in url:
-                    st.markdown(f'<div class="video-container"><iframe src="{url.replace("/edit", "/embed")}"></iframe></div>', unsafe_allow_html=True)
-                st.link_button("Notes", item.get('notes_url', "#"))
-
-st.markdown('<div class="footer">Built by KMT Dynamics</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">KIU Study Portal | Developed by KMT Dynamics © 2026</div>', unsafe_allow_html=True)
